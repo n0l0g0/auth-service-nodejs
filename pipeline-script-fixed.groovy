@@ -87,38 +87,6 @@ EOF
       }
     }
 
-    stage('Create Secrets') {
-      steps {
-        script {
-          sh """
-            oc apply -n ${NAMESPACE} -f - <<EOF
-            apiVersion: v1
-            kind: Secret
-            metadata:
-              name: auth-service-db-secret
-              namespace: ${NAMESPACE}
-            type: Opaque
-            data:
-              DB_HOST: MTg4LjE2Ni4yNTQuMTIx
-              DB_PORT: NjU0Mw==
-              DB_DATABASE: ZGVtb19kYg==
-              DB_USERNAME: cG9zdGdyZXM=
-              DB_PASSWORD: cG9zdGdyZXM=
-            ---
-            apiVersion: v1
-            kind: Secret
-            metadata:
-              name: auth-service-secret
-              namespace: ${NAMESPACE}
-            type: Opaque
-            data:
-              JWT_SECRET: c3VwZXJfc2VjcmV0X2p3dF9rZXk=
-EOF
-          """
-        }
-      }
-    }
-
     stage('Deploy to OpenShift') {
       steps {
         script {

@@ -3,6 +3,8 @@ kind: Service
 metadata:
   name: auth-service-nodejs
   namespace: auth-service-nodejs
+  labels:
+    app: auth-service-nodejs
 spec:
   selector:
     app: auth-service-nodejs
@@ -10,4 +12,5 @@ spec:
     - protocol: TCP
       port: 8085
       targetPort: 8085
-      name: http 
+      name: http
+  type: ClusterIP 

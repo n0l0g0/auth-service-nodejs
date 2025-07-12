@@ -35,18 +35,24 @@ pipeline {
       }
     }
 
-    stage('Create ImageStream') {
+    stage('Create RoleBinding') {
       steps {
         script {
           sh """
-            oc get is ${BUILD_NAME} -n ${NAMESPACE} || oc apply -n ${NAMESPACE} -f - <<EOF
-            apiVersion: image.openshift.io/v1
-            kind: ImageStream
+            oc get rolebinding jenkins-auth-service-nodejs -n ${NAMESPACE} || oc apply -n ${NAMESPACE} -f - <<EOF
+            apiVersion: rbac.authorization.k8s.io/v1
+            kind: RoleBinding
             metadata:
-              name: ${BUILD_NAME}
-            spec:
-              lookupPolicy:
-                local: true
+              name: jenkins-auth-service-nodejs
+              namespace: ${NAMESPACE}
+            roleRef:
+              apiGroup: rbac.authorization.k8s.io
+              kind: ClusterRole
+              name: edit
+            subjects:
+            - kind: ServiceAccount
+              name: jenkins
+              namespace: cicd
 EOF
           """
         }
@@ -82,38 +88,6 @@ EOF
         script {
           sh """
             oc start-build ${BUILD_NAME} -n ${NAMESPACE} --from-dir=. --follow
-          """
-        }
-      }
-    }
-
-    stage('Create Secrets') {
-      steps {
-        script {
-          sh """
-            oc apply -n ${NAMESPACE} -f - <<EOF
-            apiVersion: v1
-            kind: Secret
-            metadata:
-              name: auth-service-db-secret
-              namespace: ${NAMESPACE}
-            type: Opaque
-            data:
-              DB_HOST: MTg4LjE2Ni4yNTQuMTIx
-              DB_PORT: NjU0Mw==
-              DB_DATABASE: ZGVtb19kYg==
-              DB_USERNAME: cG9zdGdyZXM=
-              DB_PASSWORD: cG9zdGdyZXM=
-            ---
-            apiVersion: v1
-            kind: Secret
-            metadata:
-              name: auth-service-secret
-              namespace: ${NAMESPACE}
-            type: Opaque
-            data:
-              JWT_SECRET: c3VwZXJfc2VjcmV0X2p3dF9rZXk=
-EOF
           """
         }
       }

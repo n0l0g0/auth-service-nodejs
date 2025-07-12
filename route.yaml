@@ -3,6 +3,8 @@ kind: Route
 metadata:
   name: auth-service-nodejs
   namespace: auth-service-nodejs
+  labels:
+    app: auth-service-nodejs
 spec:
   to:
     kind: Service
@@ -10,4 +12,6 @@ spec:
   port:
     targetPort: 8085
   tls:
-    termination: edge 
+    termination: edge
+  annotations:
+    openshift.io/host.generated: "true" 
