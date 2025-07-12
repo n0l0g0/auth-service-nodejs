@@ -18,8 +18,9 @@ COPY . .
 RUN addgroup -g 1001 -S nodejs && \
     adduser -S nodejs -u 1001 -G nodejs
 
-# Change ownership
-RUN chown -R nodejs:nodejs /app
+# Create logs directory and set permissions
+RUN mkdir -p /app/logs && \
+    chown -R nodejs:nodejs /app
 
 # Switch to non-root user
 USER nodejs
