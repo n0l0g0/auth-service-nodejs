@@ -1,20 +1,18 @@
 /**
  * Auth Service Models
- * ใช้ shared models และกำหนด associations
+ * ใช้ User model สำหรับ authentication
  */
 
-const { createModels } = require('aircraft-shared-models');
 const { sequelize } = require('../config/database');
 const { DataTypes } = require('sequelize');
 
-// สร้าง models ทั้งหมดจาก shared models
-const models = createModels(sequelize, DataTypes);
+// สร้าง User model
+const createUserModel = require('./user');
+const User = createUserModel(sequelize, DataTypes);
 
 // Export models สำหรับใช้งานใน auth service
-const { User } = models;
-
-// เพิ่ม sequelize instance สำหรับการใช้งาน
-models.sequelize = sequelize;
-models.Sequelize = require('sequelize');
-
-module.exports = { User };
+module.exports = { 
+  User,
+  sequelize,
+  Sequelize: require('sequelize')
+};
