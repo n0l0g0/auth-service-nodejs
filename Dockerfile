@@ -14,9 +14,9 @@ RUN npm install --only=production && npm cache clean --force
 # Copy source code
 COPY . .
 
-# Create non-root user
-RUN addgroup -g 1000890000 -S nodejs && \
-    adduser -S nodejs -u 1000890000
+# Create non-root user with safe IDs
+RUN addgroup -g 1000 -S nodejs && \
+    adduser -S nodejs -u 1000
 
 # Change ownership
 RUN chown -R nodejs:nodejs /app
