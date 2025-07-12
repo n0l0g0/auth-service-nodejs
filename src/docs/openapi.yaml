@@ -1,0 +1,1009 @@
+openapi: 3.1.0
+info:
+  title: Auth Management API
+  description: |
+    Auth Service for Aircraft Management
+    
+    ## Authentication
+    
+    ระบบใช้ HttpOnly Cookies สำหรับ authentication แทนการส่ง JWT token ผ่าน Authorization header
+    เพื่อความปลอดภัยที่สูงขึ้น โดยมี fallback รองรับ Authorization header เพื่อ backward compatibility
+    
+    ### การใช้งาน HttpOnly Cookies
+    
+    1. **การ Login**: เรียก `/auth/login` หรือ `/auth/register` จะได้ HttpOnly Cookie ที่มี JWT token
+    2. **การเรียก API**: ใช้ `credentials: 'include'` ใน fetch requests
+    3. **การ Logout**: เรียก `/auth/logout` เพื่อลบ cookies
+    
+    ### ความปลอดภัย
+    
+    - **HttpOnly**: ป้องกันการเข้าถึง token ผ่าน JavaScript
+    - **Secure**: ใช้ HTTPS ใน production
+    - **SameSite**: ป้องกัน CSRF attacks
+    - **Automatic Expiry**: Token หมดอายุอัตโนมัติ
+    
+    ### Backward Compatibility
+    
+    ระบบยังคงรองรับ Authorization header สำหรับ API clients ที่ยังไม่สามารถใช้ cookies ได้
+    
+  version: 1.0.0
+  contact:
+    name: Auth Service Support
+    email: support@example.com
+  license:
+    name: MIT
+    url: https://opensource.org/licenses/MIT
+
+servers:
+  - url: http://localhost:8085/api
+    description: Development server
+  - url: https://auth-api.example.com/api
+    description: Production server
+
+components:
+  securitySchemes:
+    CookieAuth:
+      type: apiKey
+      in: cookie
+      name: auth_token
+      description: |
+        HttpOnly Cookie authentication (แนะนำ)
+        
+        Cookie จะถูกตั้งค่าอัตโนมัติหลังจาก login สำเร็จ
+        และจะถูกส่งไปพร้อมกับทุก request โดยอัตโนมัติ
+        
+        **ข้อดี:**
+        - ความปลอดภัยสูง (HttpOnly, Secure, SameSite)
+        - ป้องกัน XSS attacks
+        - จัดการ token lifecycle อัตโนมัติ
+        
+    BearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: |
+        JWT token authentication (สำหรับ backward compatibility)
+        
+        ใส่ token ใน Authorization header:
+        `Authorization: Bearer <your_jwt_token>`
+        
+        **การใช้งาน:**
+        - API clients ที่ไม่สามารถใช้ cookies ได้
+        - Mobile applications
+        - Third-party integrations
+
+  schemas:
+    User:
+      type: object
+      required:
+        - id
+        - username
+        - email
+      properties:
+        id:
+          type: string
+          format: uuid
+          description: ID ของผู้ใช้ (UUID)
+          example: "123e4567-e89b-12d3-a456-426614174000"
+        username:
+          type: string
+          description: ชื่อผู้ใช้ (ต้องไม่ซ้ำกัน)
+          example: "john_doe"
+          minLength: 3
+          maxLength: 50
+        email:
+          type: string
+          format: email
+          description: Email ของผู้ใช้ (ต้องไม่ซ้ำกัน)
+          example: "john.doe@example.com"
+        password:
+          type: string
+          description: รหัสผ่านของผู้ใช้ (ไม่ควรส่งกลับใน API)
+          minLength: 6
+          writeOnly: true
+        fullname:
+          type: string
+          description: ชื่อเต็มของผู้ใช้
+          example: "John Doe"
+          maxLength: 100
+        required_duo:
+          type: boolean
+          description: ระบุว่าผู้ใช้ต้องใช้การยืนยันตัวตนแบบสองชั้น (Duo) หรือไม่
+          default: false
+        duo_verified:
+          type: boolean
+          description: ระบุว่าผู้ใช้ได้ยืนยันตัวตนผ่าน Duo แล้วหรือไม่
+          default: false
+        is_active:
+          type: boolean
+          description: สถานะการใช้งานของผู้ใช้
+          default: true
+        created_at:
+          type: string
+          format: date-time
+          description: วันที่สร้างบัญชี
+          readOnly: true
+        updated_at:
+          type: string
+          format: date-time
+          description: วันที่อัปเดตล่าสุด
+          readOnly: true
+
+    AuthResponse:
+      type: object
+      properties:
+        message:
+          type: string
+          description: ข้อความตอบกลับ
+        user:
+          $ref: '#/components/schemas/UserProfile'
+
+    UserProfile:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+          description: ID ของผู้ใช้
+        username:
+          type: string
+          description: ชื่อผู้ใช้
+        email:
+          type: string
+          format: email
+          description: อีเมลของผู้ใช้
+        fullname:
+          type: string
+          description: ชื่อเต็มของผู้ใช้
+        required_duo:
+          type: boolean
+          description: ต้องการ Duo authentication หรือไม่
+        duo_verified:
+          type: boolean
+          description: ยืนยันตัวตน Duo แล้วหรือไม่
+        is_active:
+          type: boolean
+          description: สถานะการใช้งาน
+
+    ErrorResponse:
+      type: object
+      properties:
+        message:
+          type: string
+          description: ข้อความแสดงข้อผิดพลาด
+        error:
+          type: string
+          description: รายละเอียดข้อผิดพลาด (ใน development mode)
+        errors:
+          type: array
+          items:
+            type: object
+            properties:
+              field:
+                type: string
+              message:
+                type: string
+          description: รายการข้อผิดพลาดการ validation
+
+    HealthResponse:
+      type: object
+      properties:
+        success:
+          type: boolean
+          description: สถานะการทำงาน
+        service:
+          type: string
+          description: ชื่อบริการ
+        status:
+          type: string
+          description: สถานะบริการ
+          enum: [available, unavailable, degraded]
+        timestamp:
+          type: string
+          format: date-time
+          description: เวลาที่ตรวจสอบ
+        details:
+          type: object
+          description: รายละเอียดเพิ่มเติม
+
+security:
+  - CookieAuth: []
+  - BearerAuth: []
+
+paths:
+  # Authentication Endpoints
+  /auth/register:
+    post:
+      summary: ลงทะเบียนผู้ใช้ใหม่
+      description: |
+        สร้างบัญชีผู้ใช้ใหม่และตั้งค่า HttpOnly Cookie สำหรับ authentication
+        
+        **หมายเหตุ:** หลังจากลงทะเบียนสำเร็จ จะได้รับ HttpOnly Cookie ที่มี JWT token
+        ไม่จำเป็นต้องเก็บ token ใน localStorage หรือ sessionStorage
+      tags:
+        - Authentication
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - username
+                - email
+                - password
+              properties:
+                username:
+                  type: string
+                  description: ชื่อผู้ใช้ (ต้องไม่ซ้ำกัน)
+                  example: "john_doe"
+                  minLength: 3
+                  maxLength: 50
+                email:
+                  type: string
+                  format: email
+                  description: Email ของผู้ใช้ (ต้องไม่ซ้ำกัน)
+                  example: "john.doe@example.com"
+                password:
+                  type: string
+                  description: รหัสผ่านของผู้ใช้
+                  example: "securePassword123"
+                fullname:
+                  type: string
+                  description: ชื่อเต็มของผู้ใช้
+                  example: "John Doe"
+                  maxLength: 100
+            examples:
+              basic_registration:
+                summary: การลงทะเบียนพื้นฐาน
+                value:
+                  username: "john_doe"
+                  email: "john.doe@example.com"
+                  password: "securePassword123"
+                  fullname: "John Doe"
+      responses:
+        "201":
+          description: ลงทะเบียนสำเร็จ และตั้งค่า HttpOnly Cookie
+          headers:
+            Set-Cookie:
+              description: HttpOnly Cookie ที่มี JWT token
+              schema:
+                type: string
+                example: "auth_token=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...; HttpOnly; Secure; SameSite=Strict; Path=/; Max-Age=86400"
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AuthResponse'
+              examples:
+                success:
+                  summary: ลงทะเบียนสำเร็จ
+                  value:
+                    message: "ลงทะเบียนสำเร็จ"
+                    user:
+                      id: "123e4567-e89b-12d3-a456-426614174000"
+                      username: "john_doe"
+                      email: "john.doe@example.com"
+                      fullname: "John Doe"
+                      required_duo: false
+                      duo_verified: false
+                      is_active: true
+        "409":
+          description: ชื่อผู้ใช้หรืออีเมลมีอยู่แล้ว
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "400":
+          description: ข้อมูลไม่ถูกต้อง
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "500":
+          description: เกิดข้อผิดพลาดที่เซิร์ฟเวอร์
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /auth/login:
+    post:
+      summary: เข้าสู่ระบบผู้ใช้
+      description: |
+        เข้าสู่ระบบด้วย username และ password และตั้งค่า HttpOnly Cookie
+        
+        **หมายเหตุ:** หลังจาก login สำเร็จ จะได้รับ HttpOnly Cookie ที่มี JWT token
+        ไม่จำเป็นต้องเก็บ token ใน localStorage หรือ sessionStorage
+        
+        **2FA Support:** หากผู้ใช้เปิดใช้งาน Duo Security จะได้รับ redirect URL สำหรับยืนยันตัวตน
+      tags:
+        - Authentication
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - username
+                - password
+              properties:
+                username:
+                  type: string
+                  description: ชื่อผู้ใช้สำหรับการเข้าสู่ระบบ
+                  example: "john_doe"
+                password:
+                  type: string
+                  description: รหัสผ่านสำหรับการเข้าสู่ระบบ
+                  example: "securePassword123"
+            examples:
+              login_request:
+                summary: การเข้าสู่ระบบ
+                value:
+                  username: "john_doe"
+                  password: "securePassword123"
+      responses:
+        "200":
+          description: เข้าสู่ระบบสำเร็จ และตั้งค่า HttpOnly Cookie
+          headers:
+            Set-Cookie:
+              description: HttpOnly Cookie ที่มี JWT token
+              schema:
+                type: string
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AuthResponse'
+        "302":
+          description: ต้องการการยืนยันตัวตนแบบสองชั้น (Duo)
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    type: string
+                  redirectUrl:
+                    type: string
+                    description: URL สำหรับยืนยันตัวตนด้วย Duo
+        "401":
+          description: ชื่อผู้ใช้หรือรหัสผ่านไม่ถูกต้อง
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "500":
+          description: เกิดข้อผิดพลาดที่เซิร์ฟเวอร์
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /auth/check:
+    get:
+      summary: ตรวจสอบสถานะการเข้าสู่ระบบ
+      description: |
+        ตรวจสอบว่า HttpOnly Cookie หรือ Authorization header ยังใช้งานได้หรือไม่
+        
+        **การใช้งาน:** เรียกใช้เพื่อตรวจสอบสถานะการล็อกอินก่อนเข้าถึงหน้าที่ต้องการ authentication
+      tags:
+        - Authentication
+      responses:
+        "200":
+          description: Token ถูกต้อง และผู้ใช้ยังล็อกอินอยู่
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    type: string
+                    example: "Token ถูกต้อง"
+                  user:
+                    $ref: '#/components/schemas/UserProfile'
+        "401":
+          description: ไม่ได้รับอนุญาต - Token หมดอายุหรือไม่ถูกต้อง
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /auth/logout:
+    post:
+      summary: ออกจากระบบผู้ใช้
+      description: |
+        ลบ HttpOnly Cookie และออกจากระบบ
+        
+        **หมายเหตุ:** จะลบ auth_token cookie และผู้ใช้จะต้อง login ใหม่
+      tags:
+        - Authentication
+      responses:
+        "200":
+          description: ออกจากระบบสำเร็จ และลบ Cookie
+          headers:
+            Set-Cookie:
+              description: ลบ HttpOnly Cookie
+              schema:
+                type: string
+                example: "auth_token=; HttpOnly; Secure; SameSite=Strict; Path=/; Expires=Thu, 01 Jan 1970 00:00:00 GMT"
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    type: string
+                    example: "ออกจากระบบสำเร็จ"
+
+  /auth/me:
+    get:
+      summary: ดึงข้อมูลของผู้ใช้ที่เข้าสู่ระบบ
+      description: |
+        ดึงข้อมูลโปรไฟล์ของผู้ใช้ที่ล็อกอินอยู่ในปัจจุบัน
+        
+        **การใช้งาน:** เรียกใช้เพื่อแสดงข้อมูลผู้ใช้ใน UI หรือตรวจสอบสิทธิ์
+      tags:
+        - Authentication
+      responses:
+        "200":
+          description: ข้อมูลผู้ใช้ที่เข้าสู่ระบบ
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                    example: true
+                  user:
+                    $ref: '#/components/schemas/UserProfile'
+        "401":
+          description: ไม่ได้รับอนุญาต
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "404":
+          description: ไม่พบผู้ใช้
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "500":
+          description: เกิดข้อผิดพลาดที่เซิร์ฟเวอร์
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  # Duo Security Endpoints
+  /auth/duo/health:
+    get:
+      summary: ตรวจสอบสถานะของ Duo Security Service
+      description: |
+        ตรวจสอบว่าบริการ Duo Security พร้อมใช้งานหรือไม่
+        
+        **การใช้งาน:** เรียกใช้เพื่อตรวจสอบสถานะก่อนเริ่มกระบวนการ 2FA
+      tags:
+        - Duo Security
+      responses:
+        "200":
+          description: Duo Service ทำงานปกติ
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HealthResponse'
+              examples:
+                available:
+                  summary: บริการพร้อมใช้งาน
+                  value:
+                    success: true
+                    service: "duo-security"
+                    status: "available"
+                    timestamp: "2024-01-01T12:00:00Z"
+                unavailable:
+                  summary: บริการไม่พร้อมใช้งาน
+                  value:
+                    success: true
+                    service: "duo-security"
+                    status: "unavailable"
+                    timestamp: "2024-01-01T12:00:00Z"
+        "503":
+          description: Duo Service ไม่สามารถเข้าถึงได้
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /auth/duo/callback:
+    get:
+      summary: รับข้อมูลหลังจากการยืนยันตัวตนด้วย Duo Security
+      description: |
+        Endpoint สำหรับรับข้อมูลกลับจาก Duo Security หลังจากผู้ใช้ยืนยันตัวตนแล้ว
+        
+        **หมายเหตุ:** Endpoint นี้จะถูกเรียกโดย Duo Security โดยอัตโนมัติ
+      tags:
+        - Duo Security
+      parameters:
+        - name: state
+          in: query
+          required: true
+          schema:
+            type: string
+            description: รหัสสถานะที่ส่งกลับจาก Duo
+        - name: duo_code
+          in: query
+          required: true
+          schema:
+            type: string
+            description: รหัสยืนยันตัวตนที่ส่งกลับจาก Duo
+      responses:
+        "302":
+          description: ยืนยันตัวตนสำเร็จและเปลี่ยนเส้นทางไปยัง Frontend
+          headers:
+            Location:
+              description: URL ที่จะ redirect ไป
+              schema:
+                type: string
+            Set-Cookie:
+              description: HttpOnly Cookie ที่มี JWT token (หากยืนยันสำเร็จ)
+              schema:
+                type: string
+        "400":
+          description: พารามิเตอร์ไม่ถูกต้อง
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "500":
+          description: เกิดข้อผิดพลาดในการยืนยันตัวตน
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  # SAML Authentication Endpoints
+  /auth/saml:
+    get:
+      summary: เริ่มต้นการยืนยันตัวตนด้วย SAML
+      description: |
+        เริ่มกระบวนการ SAML Single Sign-On (SSO)
+        
+        **การใช้งาน:** เรียกใช้เพื่อ redirect ผู้ใช้ไปยัง Identity Provider
+      tags:
+        - SAML Authentication
+      responses:
+        "302":
+          description: เปลี่ยนเส้นทางไปยัง Identity Provider สำหรับการยืนยันตัวตน
+          headers:
+            Location:
+              description: URL ของ Identity Provider
+              schema:
+                type: string
+
+  /auth/saml/callback:
+    post:
+      summary: รับข้อมูลหลังจากการยืนยันตัวตนด้วย SAML
+      description: |
+        รับ SAML Response จาก Identity Provider หลังจากผู้ใช้ยืนยันตัวตนแล้ว
+        
+        **หมายเหตุ:** Endpoint นี้จะถูกเรียกโดย Identity Provider โดยอัตโนมัติ
+      tags:
+        - SAML Authentication
+      requestBody:
+        required: true
+        content:
+          application/x-www-form-urlencoded:
+            schema:
+              type: object
+              properties:
+                SAMLResponse:
+                  type: string
+                  description: SAML Response ที่เข้ารหัสแล้ว
+                RelayState:
+                  type: string
+                  description: สถานะที่ส่งไปพร้อมกับ SAML Request
+      responses:
+        "302":
+          description: ยืนยันตัวตนสำเร็จและเปลี่ยนเส้นทางไปยัง Frontend
+          headers:
+            Location:
+              description: URL ที่จะ redirect ไป
+              schema:
+                type: string
+            Set-Cookie:
+              description: HttpOnly Cookie ที่มี JWT token
+              schema:
+                type: string
+        "400":
+          description: SAML Response ไม่ถูกต้อง
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "500":
+          description: เกิดข้อผิดพลาดในการประมวลผล SAML
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  # User Management Endpoints
+  /users:
+    get:
+      summary: ดึงข้อมูลผู้ใช้ทั้งหมด
+      description: |
+        ดึงรายการผู้ใช้ทั้งหมดในระบบ (สำหรับ Admin)
+        
+        **สิทธิ์:** ต้องมีสิทธิ์ Admin หรือ User Management
+      tags:
+        - User Management
+      parameters:
+        - name: page
+          in: query
+          schema:
+            type: integer
+            minimum: 1
+            default: 1
+          description: หมายเลขหน้า
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 100
+            default: 20
+          description: จำนวนรายการต่อหน้า
+        - name: search
+          in: query
+          schema:
+            type: string
+          description: ค้นหาจากชื่อผู้ใช้หรืออีเมล
+        - name: is_active
+          in: query
+          schema:
+            type: boolean
+          description: กรองตามสถานะการใช้งาน
+      responses:
+        "200":
+          description: ข้อมูลผู้ใช้ทั้งหมด
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    type: string
+                  count:
+                    type: integer
+                    description: จำนวนผู้ใช้ทั้งหมด
+                  users:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/UserProfile'
+                  pagination:
+                    type: object
+                    properties:
+                      page:
+                        type: integer
+                      limit:
+                        type: integer
+                      total:
+                        type: integer
+                      pages:
+                        type: integer
+        "401":
+          description: ไม่ได้รับอนุญาต
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "403":
+          description: ไม่มีสิทธิ์เข้าถึง
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "500":
+          description: เกิดข้อผิดพลาดที่เซิร์ฟเวอร์
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /users/{id}:
+    get:
+      summary: ดึงข้อมูลผู้ใช้ตาม ID
+      description: |
+        ดึงข้อมูลผู้ใช้รายบุคคลตาม ID
+        
+        **สิทธิ์:** สามารถดูข้อมูลตัวเองหรือต้องมีสิทธิ์ Admin
+      tags:
+        - User Management
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+          description: ID ของผู้ใช้ (UUID)
+          example: "123e4567-e89b-12d3-a456-426614174000"
+      responses:
+        "200":
+          description: ข้อมูลผู้ใช้ที่พบ
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    type: string
+                  user:
+                    $ref: '#/components/schemas/UserProfile'
+        "401":
+          description: ไม่ได้รับอนุญาต
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "403":
+          description: ไม่มีสิทธิ์เข้าถึงข้อมูลผู้ใช้นี้
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "404":
+          description: ไม่พบผู้ใช้
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "500":
+          description: เกิดข้อผิดพลาดที่เซิร์ฟเวอร์
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+    put:
+      summary: อัปเดตข้อมูลผู้ใช้
+      description: |
+        อัปเดตข้อมูลผู้ใช้ตาม ID
+        
+        **สิทธิ์:** สามารถแก้ไขข้อมูลตัวเองหรือต้องมีสิทธิ์ Admin
+        
+        **หมายเหตุ:** การเปลี่ยนรหัสผ่านจะเข้ารหัสอัตโนมัติ
+      tags:
+        - User Management
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+          description: ID ของผู้ใช้ (UUID)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                email:
+                  type: string
+                  format: email
+                  description: Email ของผู้ใช้ (ต้องไม่ซ้ำกัน)
+                fullname:
+                  type: string
+                  description: ชื่อเต็มของผู้ใช้
+                  maxLength: 100
+                password:
+                  type: string
+                  description: รหัสผ่านใหม่ของผู้ใช้
+                  minLength: 6
+                required_duo:
+                  type: boolean
+                  description: ระบุว่าผู้ใช้ต้องใช้การยืนยันตัวตนแบบสองชั้น (Duo) หรือไม่
+                is_active:
+                  type: boolean
+                  description: สถานะการใช้งานของผู้ใช้
+            examples:
+              update_profile:
+                summary: อัปเดตโปรไฟล์
+                value:
+                  email: "john.doe.new@example.com"
+                  fullname: "John Doe Updated"
+              enable_duo:
+                summary: เปิดใช้งาน Duo Security
+                value:
+                  required_duo: true
+              change_password:
+                summary: เปลี่ยนรหัสผ่าน
+                value:
+                  password: "newSecurePassword123"
+      responses:
+        "200":
+          description: อัปเดตข้อมูลผู้ใช้สำเร็จ
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    type: string
+                  user:
+                    $ref: '#/components/schemas/UserProfile'
+        "400":
+          description: ข้อมูลไม่ถูกต้อง
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "401":
+          description: ไม่ได้รับอนุญาต
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "403":
+          description: ไม่มีสิทธิ์แก้ไขข้อมูลผู้ใช้นี้
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "404":
+          description: ไม่พบผู้ใช้
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "409":
+          description: อีเมลซ้ำกับผู้ใช้อื่น
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "500":
+          description: เกิดข้อผิดพลาดที่เซิร์ฟเวอร์
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+    delete:
+      summary: ลบผู้ใช้ตาม ID
+      description: |
+        ลบผู้ใช้ออกจากระบบ
+        
+        **สิทธิ์:** ต้องมีสิทธิ์ Admin
+        
+        **คำเตือน:** การลบจะไม่สามารถกู้คืนได้
+      tags:
+        - User Management
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+          description: ID ของผู้ใช้ (UUID)
+      responses:
+        "200":
+          description: ลบผู้ใช้สำเร็จ
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    type: string
+                    example: "ลบผู้ใช้สำเร็จ"
+        "401":
+          description: ไม่ได้รับอนุญาต
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "403":
+          description: ไม่มีสิทธิ์ลบผู้ใช้
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "404":
+          description: ไม่พบผู้ใช้
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "500":
+          description: เกิดข้อผิดพลาดที่เซิร์ฟเวอร์
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  # Health Check Endpoints
+  /:
+    get:
+      summary: ตรวจสอบสถานะ API
+      description: |
+        ตรวจสอบสถานะพื้นฐานของ Auth Service
+        
+        **การใช้งาน:** เรียกใช้เพื่อตรวจสอบว่าบริการทำงานปกติหรือไม่
+      tags:
+        - Health Check
+      security: []
+      responses:
+        "200":
+          description: บริการทำงานปกติ
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    type: string
+                    example: "ยินดีต้อนรับสู่ Auth Service สำหรับจัดการข้อมูลผู้ใช้"
+                  version:
+                    type: string
+                    example: "1.0.0"
+                  status:
+                    type: string
+                    example: "online"
+                  timestamp:
+                    type: string
+                    format: date-time
+
+tags:
+  - name: Authentication
+    description: |
+      การจัดการการยืนยันตัวตนด้วย HttpOnly Cookies
+      
+      **หลักการทำงาน:**
+      - ใช้ HttpOnly Cookies เป็นหลัก
+      - รองรับ Authorization header สำหรับ backward compatibility
+      - JWT tokens มีอายุการใช้งาน 24 ชั่วโมง
+      - รองรับ 2FA ด้วย Duo Security และ SAML SSO
+      
+  - name: Duo Security
+    description: |
+      การยืนยันตัวตนแบบสองปัจจัย (2FA) ด้วย Duo Security
+      
+      **คุณสมบัติ:**
+      - รองรับ Push Notifications, SMS, และ Hardware Tokens
+      - ตรวจสอบสถานะบริการแบบ Real-time
+      - การจัดการ Callback อัตโนมัติ
+      
+  - name: SAML Authentication
+    description: |
+      Single Sign-On (SSO) ด้วย SAML 2.0
+      
+      **การใช้งาน:**
+      - รองรับ Identity Providers ยอดนิยม (Keycloak, Active Directory, etc.)
+      - การจัดการ Metadata และ Certificates
+      - Auto-provisioning ผู้ใช้ใหม่
+      
+  - name: User Management
+    description: |
+      การจัดการข้อมูลผู้ใช้และสิทธิ์การเข้าถึง
+      
+      **คุณสมบัติ:**
+      - CRUD operations สำหรับผู้ใช้
+      - การจัดการสิทธิ์และบทบาท
+      - การเปิด/ปิดใช้งานบัญชี
+      - การตั้งค่า 2FA
+      
+  - name: Health Check
+    description: |
+      การตรวจสอบสถานะและการทำงานของระบบ
+      
+      **การใช้งาน:**
+      - ตรวจสอบสถานะ API
+      - ตรวจสอบการเชื่อมต่อฐานข้อมูล
+      - ตรวจสอบบริการภายนอก (Duo, SAML IdP)

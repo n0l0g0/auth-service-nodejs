@@ -1,0 +1,13 @@
+apiVersion: route.openshift.io/v1
+kind: Route
+metadata:
+  name: auth-service-nodejs
+  namespace: auth-service-nodejs
+spec:
+  to:
+    kind: Service
+    name: auth-service-nodejs
+  port:
+    targetPort: 8085
+  tls:
+    termination: edge 
