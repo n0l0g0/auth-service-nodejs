@@ -15,7 +15,7 @@ RUN npm install --only=production && npm cache clean --force
 COPY . .
 
 # Create non-root user with safe group ID but OpenShift-compatible user ID
-RUN addgroup -g 1000 -S nodejs && \
+RUN addgroup -g 1001 -S nodejs && \
     adduser -S nodejs -u 1000890000 -G nodejs
 
 # Change ownership
