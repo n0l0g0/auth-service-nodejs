@@ -14,15 +14,15 @@ RUN npm install --only=production && npm cache clean --force
 # Copy source code
 COPY . .
 
-# Create non-root user with safe IDs
-RUN addgroup -g 1001 -S nodejs && \
-    adduser -S nodejs -u 1001
+# Create non-root user with safe group ID but OpenShift-compatible user ID
+RUN addgroup -g 1000 -S nodejs && \
+    adduser -S nodejs -u 1000890000 -G nodejs
 
 # Change ownership
 RUN chown -R nodejs:nodejs /app
 
 # Switch to non-root user
-USER nodejs
+USER 1000890000
 
 # Expose port
 EXPOSE 8085
